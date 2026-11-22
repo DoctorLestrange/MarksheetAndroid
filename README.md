@@ -18,6 +18,14 @@
 
 **Marksheet** is a purpose-built Android utility for grading and tallying objective exams (OMR sheets, competitive mocks, practice tests). Instead of losing count on a generic calculator or juggling spreadsheets, tap one of three thumb-zone controls — **Add Mark**, **Negative**, or **Skip Question** — while Marksheet records the exact mark assigned to every question number, computes live statistics with zero floating-point drift, and stores your complete session history offline.
 
+## Download & Install
+
+Pre-built installable APKs are published automatically via GitHub Actions:
+
+1. Open the [**Releases**](../../releases) page of this repository.
+2. Download the latest `Marksheet-*.apk` file onto your Android device (Android 7.0 / API 24 or higher).
+3. Tap the downloaded APK to install (enable *Install unknown apps* for your browser or file manager if prompted).
+
 ## Features
 
 - **Three-Button Operational Keypad**: Ergonomic thumb-zone buttons for **Add Mark (`+1`)**, **Negative (`-0.25`)**, and **Skip Question (`0`)**, showing live configured values with tactile press feedback and optional haptics.
@@ -129,8 +137,22 @@ app/src/main/java/com/example/
 git clone https://github.com/<your-username>/marksheet.git
 cd marksheet
 
-# Prepare debug keystore (if not already present)
-base64 -d debug.keystore.base64 > debug.keystore
+# Create a local debug keystore if not already present
+if [ ! -f debug.keystore ]; then
+  if [ -f debug.keystore.base64 ]; then
+    base64 -d debug.keystore.base64 > debug.keystore
+  else
+    keytool -genkeypair -v \
+      -keystore debug.keystore \
+      -storepass android \
+      -alias androiddebugkey \
+      -keypass android \
+      -keyalg RSA \
+      -keysize 2048 \
+      -validity 10000 \
+      -dname "CN=Android Debug,O=Android,C=US"
+  fi
+fi
 
 # Build debug APK
 gradle :app:assembleDebug
@@ -146,9 +168,19 @@ gradle :app:testDebugUnitTest --tests "com.example.ScoreMathTest"
 gradle :app:lintDebug
 ```
 
-### Release Signing (APK / AAB)
+### Automated GitHub Releases & Production Signing
 
-Release signing credentials are read from environment variables and never committed to source control:
+Every push to `main`/`master` automatically publishes an installable APK to the `latest` GitHub Release, and pushing a version tag (e.g., `git tag v1.0.0 && git push origin v1.0.0`) publishes a versioned release.
+
+By default, automated releases build a directly installable APK with zero setup required. To automatically publish **production-signed Release APKs & Google Play AABs**, add these three secrets under **Settings → Secrets and variables → Actions**:
+
+| GitHub Secret | Description |
+| :--- | :--- |
+| `RELEASE_KEYSTORE_BASE64` | Base64-encoded `.jks` upload keystore (`base64 -w 0 my-upload-key.jks`) |
+| `RELEASE_STORE_PASSWORD` | Keystore password |
+| `RELEASE_KEY_PASSWORD` | Key password for alias `upload` |
+
+For local release builds:
 
 ```bash
 export KEYSTORE_PATH=/path/to/your-upload-key.jks

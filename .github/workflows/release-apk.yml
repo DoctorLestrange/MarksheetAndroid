@@ -1,0 +1,152 @@
+name: Build & Publish APK Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag name (e.g. v1.0.0 or latest)'
+        required: true
+        default: 'v1.0.0'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-apk:
+    name: Build & Publish Installable APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
+
+      - name: Determine release tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.release_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="latest"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --tests "com.example.ScoreMathTest"
+
+      - name: Build signed APK (Release if secrets configured, otherwise Debug)
+        id: build
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          mkdir -p dist
+          TAG="${{ steps.meta.outputs.tag }}"
+
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "Release signing secrets detected. Building signed Release APK & AAB..."
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > release-upload-key.jks
+            export KEYSTORE_PATH="$PWD/release-upload-key.jks"
+
+            gradle :app:assembleRelease :app:bundleRelease
+
+            APK_FILE="dist/Marksheet-${TAG}.apk"
+            AAB_FILE="dist/Marksheet-${TAG}.aab"
+            cp app/build/outputs/apk/release/app-release.apk "$APK_FILE"
+            cp app/build/outputs/bundle/release/app-release.aab "$AAB_FILE"
+            rm -f release-upload-key.jks
+
+            echo "apk_path=${APK_FILE}" >> "$GITHUB_OUTPUT"
+            echo "aab_path=${AAB_FILE}" >> "$GITHUB_OUTPUT"
+            echo "build_type=Release (Production Signed)" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release signing secrets configured. Building installable APK with debug keystore..."
+            if [ ! -f debug.keystore ]; then
+              if [ -f debug.keystore.base64 ]; then
+                base64 -d debug.keystore.base64 > debug.keystore
+              else
+                keytool -genkeypair -v \
+                  -keystore debug.keystore \
+                  -storepass android \
+                  -alias androiddebugkey \
+                  -keypass android \
+                  -keyalg RSA \
+                  -keysize 2048 \
+                  -validity 10000 \
+                  -dname "CN=Android Debug,O=Android,C=US"
+              fi
+            fi
+
+            gradle :app:assembleDebug
+
+            APK_FILE="dist/Marksheet-${TAG}.apk"
+            cp app/build/outputs/apk/debug/app-debug.apk "$APK_FILE"
+
+            echo "apk_path=${APK_FILE}" >> "$GITHUB_OUTPUT"
+            echo "aab_path=" >> "$GITHUB_OUTPUT"
+            echo "build_type=Debug (Direct Install APK)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          APK_PATH="${{ steps.build.outputs.apk_path }}"
+          AAB_PATH="${{ steps.build.outputs.aab_path }}"
+          BUILD_TYPE="${{ steps.build.outputs.build_type }}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+
+          NOTES="$(printf '%s\n' \
+            "## Marksheet (${TAG})" \
+            "" \
+            "**Direct Android Installation:**" \
+            "1. Download the \`.apk\` file below onto your Android device (Android 7.0+ / API 24+)." \
+            "2. Open the downloaded file and allow installation from your browser or file manager if prompted." \
+            "" \
+            "- **Build Type:** ${BUILD_TYPE}" \
+            "- **Commit:** \`${SHORT_SHA}\`" \
+            "- **Permissions:** None (100% offline local storage)")"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Updating existing release ${TAG}..."
+            gh release edit "$TAG" --title "Marksheet ${TAG}" --notes "$NOTES"
+            gh release upload "$TAG" "$APK_PATH" --clobber
+            if [ -n "$AAB_PATH" ] && [ -f "$AAB_PATH" ]; then
+              gh release upload "$TAG" "$AAB_PATH" --clobber
+            fi
+          else
+            echo "Creating new release ${TAG}..."
+            if [ -n "$AAB_PATH" ] && [ -f "$AAB_PATH" ]; then
+              gh release create "$TAG" "$APK_PATH" "$AAB_PATH" \
+                --target "${GITHUB_SHA}" \
+                --title "Marksheet ${TAG}" \
+                --notes "$NOTES"
+            else
+              gh release create "$TAG" "$APK_PATH" \
+                --target "${GITHUB_SHA}" \
+                --title "Marksheet ${TAG}" \
+                --notes "$NOTES"
+            fi
+          fi

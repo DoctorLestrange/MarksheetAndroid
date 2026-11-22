@@ -30,10 +30,22 @@ jobs:
         with:
           gradle-version: 9.3.1
 
-      - name: Prepare debug keystore
+      - name: Ensure debug keystore exists
         run: |
-          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+          if [ ! -f debug.keystore ]; then
+            if [ -f debug.keystore.base64 ]; then
+              base64 -d debug.keystore.base64 > debug.keystore
+            else
+              keytool -genkeypair -v \
+                -keystore debug.keystore \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
           fi
 
       - name: Run unit tests
@@ -44,6 +56,11 @@ jobs:
 
       - name: Assemble Debug APK
         run: gradle :app:assembleDebug
+
+      - name: Prepare APK artifact
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Marksheet-debug.apk
 
       - name: Upload Lint Report
         if: always()
@@ -56,5 +73,5 @@ jobs:
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: marksheet-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: Marksheet-debug-apk
+          path: dist/Marksheet-debug.apk

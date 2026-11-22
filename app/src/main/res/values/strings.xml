@@ -1,0 +1,109 @@
+<resources>
+    <string name="app_name">Marksheet</string>
+
+    <!-- Navigation -->
+    <string name="nav_calculator">Calculate</string>
+    <string name="nav_history">History</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Top bar & theme -->
+    <string name="cd_toggle_theme">Toggle light and dark theme</string>
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_undo">Undo last mark</string>
+    <string name="cd_edit_title">Rename session</string>
+    <string name="cd_view_sheet">View full question sheet</string>
+    <string name="cd_save_session">Save and finish session</string>
+    <string name="cd_reset_session">Clear current session</string>
+    <string name="cd_delete_session">Delete session</string>
+    <string name="cd_resume_session">Open in calculator</string>
+
+    <!-- Calculator screen -->
+    <string name="label_score">SCORE</string>
+    <string name="label_of_max">of %1$s</string>
+    <string name="label_correct">Correct</string>
+    <string name="label_wrong">Wrong</string>
+    <string name="label_skipped">Skipped</string>
+    <string name="label_accuracy">Accuracy</string>
+    <string name="label_percentage">Percent</string>
+    <string name="label_question_progress">Question %1$d of %2$d</string>
+    <string name="label_exam_complete">All %1$d Questions Recorded</string>
+    <string name="label_marking_scheme">Scheme: +%1$s / -%2$s</string>
+    <string name="label_marking_scheme_no_neg">Scheme: +%1$s / 0</string>
+    <string name="label_question_tape">Question Log</string>
+    <string name="label_tap_to_edit">Tap any Q to edit</string>
+    <string name="label_no_questions_yet">Tap a button below to record Question 1</string>
+    <string name="action_view_all">Sheet (%1$d/%2$d)</string>
+    <string name="action_undo">Undo</string>
+    <string name="action_save">Finish</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_add_mark">Add Mark</string>
+    <string name="action_negative_mark">Negative</string>
+    <string name="action_skip_question">Skip Question</string>
+    <string name="action_save_and_new">Save &amp; New Session</string>
+    <string name="badge_skip">SKIP</string>
+
+    <!-- Dialogs & Sheets -->
+    <string name="dialog_save_title">Save Session</string>
+    <string name="dialog_save_subtitle">Name this exam session to store it in your history and start a fresh sheet.</string>
+    <string name="dialog_session_name_label">Session Name</string>
+    <string name="dialog_session_name_placeholder">e.g. Physics Mock 04</string>
+    <string name="dialog_rename_title">Rename Session</string>
+    <string name="dialog_clear_title">Clear Current Session?</string>
+    <string name="dialog_clear_message">This will erase all %1$d recorded question marks in the current session. This cannot be undone.</string>
+    <string name="dialog_delete_title">Delete Session?</string>
+    <string name="dialog_delete_message">Permanently remove \"%1$s\" and all its per-question records from history?</string>
+    <string name="dialog_edit_question_title">Edit Question %1$d</string>
+    <string name="dialog_edit_question_subtitle">Reassign the mark recorded for Q%1$d or clear it.</string>
+    <string name="dialog_apply_settings_title">Apply to Active Session?</string>
+    <string name="dialog_apply_settings_message">Your active session already has %1$d recorded questions. Would you like to recalculate it with the new scheme, or keep it unchanged and use the new settings for future sessions?</string>
+    <string name="action_apply_current">Apply to Current</string>
+    <string name="action_future_only">Future Sessions Only</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_clear_mark">Clear Q</string>
+    <string name="action_save_name">Save</string>
+    <string name="sheet_title">Question Sheet</string>
+    <string name="sheet_subtitle">Tap any question to assign, change, or clear its mark</string>
+    <string name="sheet_legend_unanswered">Unanswered</string>
+    <string name="label_recording_next">Recording Q%1$d of %2$d</string>
+
+    <!-- History screen -->
+    <string name="history_title">Session History</string>
+    <string name="history_empty_title">No Saved Sessions Yet</string>
+    <string name="history_empty_subtitle">Complete or save an exam calculation to keep a permanent record of every question\'s mark here.</string>
+    <string name="history_stat_sessions">Sessions</string>
+    <string name="history_stat_avg">Avg Score</string>
+    <string name="history_stat_best">Best</string>
+    <string name="history_filter_all">All</string>
+    <string name="history_detail_title">Session Record</string>
+    <string name="history_resume">Open in Calculator</string>
+    <string name="history_full_sheet">Full Sheet (%1$d/%2$d)</string>
+    <string name="history_question_breakdown">Per-Question Marks</string>
+    <string name="history_no_matching_questions">No questions match this filter</string>
+    <string name="history_in_progress">In Progress</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Configuration</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_theme_label">Theme</string>
+    <string name="settings_theme_light">Warm Paper Light</string>
+    <string name="settings_theme_dark">Graphite Dark</string>
+    <string name="settings_amoled_label">Pure AMOLED Black</string>
+    <string name="settings_amoled_subtitle">Use true #000000 black canvas in dark mode</string>
+    <string name="settings_haptics_label">Tactile Haptics</string>
+    <string name="settings_haptics_subtitle">Subtle vibration feedback when recording marks</string>
+
+    <string name="settings_section_marking">Default Marking Scheme</string>
+    <string name="settings_positive_label">Positive Mark (+)</string>
+    <string name="settings_negative_label">Negative Deduction (-)</string>
+    <string name="settings_questions_label">Total Questions</string>
+    <string name="settings_save_config">Save Configuration</string>
+    <string name="settings_saved_feedback">Configuration saved</string>
+    <string name="settings_section_presets">Quick Exam Presets</string>
+    <string name="settings_reset_defaults">Reset to Defaults (+1 / -0.25 / 100 Qs)</string>
+
+    <string name="error_positive_invalid">Enter a positive number greater than 0 (max 4 decimals)</string>
+    <string name="error_negative_invalid">Enter 0 or a valid number (max 4 decimals)</string>
+    <string name="error_questions_invalid">Enter an integer between 1 and 1000</string>
+</resources>

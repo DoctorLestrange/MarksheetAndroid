@@ -1,0 +1,6 @@
+{
+  "name": "Marksheet",
+  "description": "Fast, accurate exam score calculator with per-question mark recording, session history, configurable marking schemes, and warm off-white light and neutral graphite/AMOLED dark themes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

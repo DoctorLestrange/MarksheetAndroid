@@ -127,7 +127,7 @@ jobs:
             "" \
             "- **Build Type:** ${BUILD_TYPE}" \
             "- **Commit:** \`${SHORT_SHA}\`" \
-            "- **Permissions:** None (100% offline local storage)")"
+            "- **Permissions:** Offline-only (install-time \`VIBRATE\` for optional haptics)")"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Updating existing release ${TAG}..."

@@ -23,7 +23,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -51,18 +53,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.BuildConfig
 import com.example.R
 import com.example.domain.AppConfig
 import com.example.domain.DefaultExamPresets
 import com.example.domain.ExamPreset
 import com.example.domain.ScoreMath
 import com.example.domain.ThemeMode
+import com.example.ui.HapticStyle
+import com.example.ui.HapticsHelper
+import com.example.ui.components.AboutMarksheetSheet
 import com.example.ui.theme.LocalMarksheetColors
 import com.example.ui.theme.MarksheetMonoStyles
 
@@ -106,6 +114,10 @@ fun SettingsScreen(
 ) {
     val semantic = LocalMarksheetColors.current
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
+    val view = LocalView.current
+
+    var showAboutSheet by rememberSaveable { mutableStateOf(false) }
 
     var positiveInput by rememberSaveable { mutableStateOf(config.positiveMark) }
     var negativeInput by rememberSaveable { mutableStateOf(config.negativeMark) }
@@ -213,7 +225,12 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_haptics_subtitle),
                     checked = config.hapticsEnabled,
                     enabled = true,
-                    onCheckedChange = onSetHapticsEnabled,
+                    onCheckedChange = { enabled ->
+                        onSetHapticsEnabled(enabled)
+                        if (enabled) {
+                            HapticsHelper.perform(context, view, enabled = true, style = HapticStyle.TOGGLE)
+                        }
+                    },
                     testTag = "switch_haptics"
                 )
             }
@@ -424,8 +441,72 @@ fun SettingsScreen(
                 Text(stringResource(R.string.settings_reset_defaults))
             }
 
+            // About button at the bottom of Settings
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 60.dp)
+                    .clip(MaterialTheme.shapes.large)
+                    .clickable { showAboutSheet = true }
+                    .testTag("about_button"),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                border = BorderStroke(1.dp, semantic.cardBorder)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = stringResource(R.string.settings_about_button),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.settings_about_subtitle),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "v${BuildConfig.VERSION_NAME}",
+                            style = MarksheetMonoStyles.microNumber,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+
+    if (showAboutSheet) {
+        AboutMarksheetSheet(onDismiss = { showAboutSheet = false })
     }
 
     // Mid-session apply confirmation dialog

@@ -70,8 +70,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,6 +81,8 @@ import com.example.R
 import com.example.domain.ExamSession
 import com.example.domain.MarkAction
 import com.example.domain.ScoreMath
+import com.example.ui.HapticStyle
+import com.example.ui.HapticsHelper
 import com.example.ui.components.QuestionEditDialog
 import com.example.ui.components.QuestionRecordChip
 import com.example.ui.components.QuestionSheetBottomSheet
@@ -117,11 +119,20 @@ fun CalculatorScreen(
     var showRenameDialog by rememberSaveable { mutableStateOf(false) }
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
 
-    val haptics = LocalHapticFeedback.current
-    val triggerHaptic: () -> Unit = {
-        if (hapticsEnabled) {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        }
+    val context = LocalContext.current
+    val view = LocalView.current
+    val triggerHaptic: (HapticStyle) -> Unit = { style ->
+        HapticsHelper.perform(
+            context = context,
+            view = view,
+            enabled = hapticsEnabled,
+            style = style
+        )
+    }
+    fun styleForAction(action: MarkAction?): HapticStyle = when (action) {
+        MarkAction.CORRECT -> HapticStyle.POSITIVE
+        MarkAction.WRONG -> HapticStyle.NEGATIVE
+        MarkAction.SKIPPED, null -> HapticStyle.NEUTRAL
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -154,7 +165,7 @@ fun CalculatorScreen(
                     QuestionTapeSection(
                         session = session,
                         onUndo = {
-                            triggerHaptic()
+                            triggerHaptic(HapticStyle.NEUTRAL)
                             onUndo()
                         },
                         onOpenSheet = { showFullSheet = true },
@@ -177,7 +188,7 @@ fun CalculatorScreen(
                     OperationalKeypad(
                         session = session,
                         onAction = { action ->
-                            triggerHaptic()
+                            triggerHaptic(styleForAction(action))
                             onRecordMark(action)
                         }
                     )
@@ -213,7 +224,7 @@ fun CalculatorScreen(
                     QuestionTapeSection(
                         session = session,
                         onUndo = {
-                            triggerHaptic()
+                            triggerHaptic(HapticStyle.NEUTRAL)
                             onUndo()
                         },
                         onOpenSheet = { showFullSheet = true },
@@ -237,7 +248,7 @@ fun CalculatorScreen(
                     OperationalKeypad(
                         session = session,
                         onAction = { action ->
-                            triggerHaptic()
+                            triggerHaptic(styleForAction(action))
                             onRecordMark(action)
                         }
                     )
@@ -267,7 +278,7 @@ fun CalculatorScreen(
             positiveMark = session.positiveMark,
             negativeMark = session.negativeMark,
             onSelectAction = { newAction ->
-                triggerHaptic()
+                triggerHaptic(styleForAction(newAction))
                 onSetQuestionMark(session.id, qToEdit, newAction)
                 editingQuestionNumber = null
             },
@@ -444,7 +455,7 @@ private fun QuestionTapeSection(
     val summary = session.summary
     val listState = rememberLazyListState()
 
-    // Scroll to the most recently recorded question so sequential tapping AND gap filling stay visible.
+    // Keep the most recently recorded chip visible without jittery mid-flight scroll animations on rapid taps.
     val latestRecord = remember(session.records) {
         session.records.maxByOrNull { it.recordedAt }
     }
@@ -452,7 +463,10 @@ private fun QuestionTapeSection(
         val targetQ = latestRecord?.questionNumber ?: return@LaunchedEffect
         val targetIndex = session.records.indexOfFirst { it.questionNumber == targetQ }
         if (targetIndex >= 0) {
-            listState.animateScrollToItem(targetIndex)
+            val isAlreadyVisible = listState.layoutInfo.visibleItemsInfo.any { it.index == targetIndex }
+            if (!isAlreadyVisible) {
+                listState.scrollToItem(targetIndex)
+            }
         }
     }
 

@@ -3,6 +3,7 @@ package com.example.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -50,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.domain.AppConfig
 import com.example.domain.ThemeMode
 import com.example.ui.screens.CalculatorScreen
 import com.example.ui.screens.HistoryScreen
@@ -72,11 +74,9 @@ enum class MarksheetTab(
 @Composable
 fun MarksheetApp(
     viewModel: MarksheetViewModel,
-    config: com.example.domain.AppConfig
+    config: AppConfig
 ) {
-    val activeSession by viewModel.activeSession.collectAsStateWithLifecycle()
-    val historySessions by viewModel.historySessions.collectAsStateWithLifecycle()
-    val selectedHistorySession by viewModel.selectedHistorySession.collectAsStateWithLifecycle()
+    val selectedHistoryId by viewModel.selectedHistorySessionId.collectAsStateWithLifecycle()
 
     var currentTab by rememberSaveable { mutableStateOf(MarksheetTab.CALCULATOR) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -93,12 +93,12 @@ fun MarksheetApp(
     }
 
     // Back press on non-calculator tabs returns to Calculator cleanly
-    BackHandler(enabled = currentTab != MarksheetTab.CALCULATOR && selectedHistorySession == null) {
+    BackHandler(enabled = currentTab != MarksheetTab.CALCULATOR && selectedHistoryId == null) {
         currentTab = MarksheetTab.CALCULATOR
     }
 
     val topTitle = when {
-        currentTab == MarksheetTab.HISTORY && selectedHistorySession != null ->
+        currentTab == MarksheetTab.HISTORY && selectedHistoryId != null ->
             stringResource(R.string.history_detail_title)
         currentTab == MarksheetTab.HISTORY ->
             stringResource(R.string.history_title)
@@ -117,7 +117,7 @@ fun MarksheetApp(
             contentWindowInsets = WindowInsets.statusBars,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
-                androidx.compose.foundation.layout.Column {
+                Column {
                     CenterAlignedTopAppBar(
                         title = {
                             Text(
@@ -152,7 +152,7 @@ fun MarksheetApp(
             },
             bottomBar = {
                 if (!useNavRail) {
-                    androidx.compose.foundation.layout.Column {
+                    Column {
                         HorizontalDivider(color = semantic.cardBorder, thickness = 1.dp)
                         NavigationBar(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -164,9 +164,7 @@ fun MarksheetApp(
                                 NavigationBarItem(
                                     selected = selected,
                                     onClick = {
-                                        if (tab != MarksheetTab.HISTORY) {
-                                            viewModel.selectHistorySession(null)
-                                        } else if (currentTab == MarksheetTab.HISTORY) {
+                                        if (tab != MarksheetTab.HISTORY || currentTab == MarksheetTab.HISTORY) {
                                             viewModel.selectHistorySession(null)
                                         }
                                         currentTab = tab
@@ -226,6 +224,7 @@ fun MarksheetApp(
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     when (currentTab) {
                         MarksheetTab.CALCULATOR -> {
+                            val activeSession by viewModel.activeSession.collectAsStateWithLifecycle()
                             CalculatorScreen(
                                 session = activeSession,
                                 hapticsEnabled = config.hapticsEnabled,
@@ -241,6 +240,9 @@ fun MarksheetApp(
                         }
 
                         MarksheetTab.HISTORY -> {
+                            // Collected lazily ONLY inside the History tab so calculator taps
+                            // never re-query or recompose historical sessions.
+                            val selectedHistorySession by viewModel.selectedHistorySession.collectAsStateWithLifecycle()
                             val detailSession = selectedHistorySession
                             if (detailSession != null) {
                                 SessionDetailScreen(
@@ -262,6 +264,7 @@ fun MarksheetApp(
                                     }
                                 )
                             } else {
+                                val historySessions by viewModel.historySessions.collectAsStateWithLifecycle()
                                 HistoryScreen(
                                     sessions = historySessions,
                                     onSessionClick = { id -> viewModel.selectHistorySession(id) }
@@ -270,6 +273,7 @@ fun MarksheetApp(
                         }
 
                         MarksheetTab.SETTINGS -> {
+                            val activeSession by viewModel.activeSession.collectAsStateWithLifecycle()
                             SettingsScreen(
                                 config = config,
                                 activeSessionAnsweredCount = activeSession?.summary?.answeredCount ?: 0,

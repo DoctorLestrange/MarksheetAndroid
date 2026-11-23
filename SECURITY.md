@@ -3,7 +3,7 @@
 ## Threat Model & Privacy Architecture
 
 **Marksheet** is designed with a minimal attack surface:
-- **Zero Android Permissions**: No `INTERNET`, storage, camera, location, or contacts permissions are declared or requested.
+- **Minimal Permissions**: Only the standard install-time `VIBRATE` permission is declared (for optional tactile haptic feedback). No `INTERNET`, storage, camera, location, or contacts permissions are declared or requested.
 - **100% Local Storage**: Session records are stored locally in Room SQLite (`marksheet_db`) and configuration preferences in Jetpack DataStore (`marksheet_settings`).
 - **No Third-Party Telemetry or Ads**: No tracking SDKs, crash reporters, or remote endpoints are included.
 - **No Committed Secrets**: Production signing keys are injected strictly via environment variables (`KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_PASSWORD`).

@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.example.domain.AppConfig
 import com.example.domain.ExamSession
 import com.example.domain.MarkAction
+import com.example.domain.QuestionRecord
 import com.example.domain.ScoreMath
 import com.example.domain.ThemeMode
 import kotlinx.coroutines.flow.Flow
@@ -15,20 +16,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class UndoResult(
-    val questionNumber: Int,
-    val wasRestore: Boolean
-)
-
 data class ConfigUpdateResult(
     val clampedActiveSessionTo: Int? = null
 )
-
-internal sealed interface UndoEntry {
-    data class Inserted(val questionNumber: Int) : UndoEntry
-    data class Updated(val previous: QuestionRecordEntity) : UndoEntry
-    data class Deleted(val previous: QuestionRecordEntity) : UndoEntry
-}
 
 class MarksheetRepository(
     private val database: MarksheetDatabase,
@@ -36,12 +26,8 @@ class MarksheetRepository(
     private val settingsDataStore: SettingsDataStore
 ) {
     private val operationMutex = Mutex()
-    private val undoStacks = HashMap<Long, ArrayDeque<UndoEntry>>()
 
     val configFlow: Flow<AppConfig> = settingsDataStore.configFlow
-
-    val activeSessionFlow: Flow<ExamSession?> = dao.observeActiveSession()
-        .map { it?.toDomain() }
 
     /**
      * History displays all completed sessions plus any active session that has at least
@@ -57,10 +43,18 @@ class MarksheetRepository(
     fun observeSession(sessionId: Long): Flow<ExamSession?> =
         dao.observeSessionById(sessionId).map { it?.toDomain() }
 
-    suspend fun ensureActiveSession(): Long = operationMutex.withLock {
+    /**
+     * Loads the current active session with all its records, creating one atomically if none exists.
+     */
+    suspend fun getOrCreateActiveSessionSnapshot(): ExamSession = operationMutex.withLock {
         database.withTransaction {
-            val existing = dao.getActiveSessionOnce()
-            existing?.id ?: createNewActiveSessionLocked()
+            val existing = dao.getActiveSessionWithRecordsOnce()
+            if (existing != null) {
+                return@withTransaction existing.toDomain()
+            }
+            val newId = createNewActiveSessionLocked()
+            val created = dao.getSessionOnce(newId)!!
+            SessionWithRecords(created, emptyList()).toDomain()
         }
     }
 
@@ -79,68 +73,45 @@ class MarksheetRepository(
         return dao.insertSession(entity)
     }
 
-    private suspend fun nextMonotonicTimestamp(sessionId: Long): Long {
-        val now = System.currentTimeMillis()
-        val maxExisting = dao.getMaxRecordedAt(sessionId) ?: 0L
-        return maxOf(now, maxExisting + 1L)
-    }
-
-    private fun pushUndo(sessionId: Long, entry: UndoEntry) {
-        val stack = undoStacks.getOrPut(sessionId) { ArrayDeque() }
-        if (stack.size >= MAX_UNDO_HISTORY) {
-            stack.removeFirst()
-        }
-        stack.addLast(entry)
-    }
-
-    private fun clearUndo(sessionId: Long) {
-        undoStacks.remove(sessionId)
-    }
-
     /**
-     * Records the next unanswered question (lowest Q# in 1..totalQuestions) with the chosen action.
-     * Guarded by [operationMutex] and wrapped in an ACID transaction so rapid taps never collide.
+     * Fast, single-transaction persistence of a single question record upsert + session timestamp touch.
+     * Avoids redundant SELECT * queries on every calculator tap.
      */
-    suspend fun recordNextQuestion(sessionId: Long, action: MarkAction): Int? =
-        operationMutex.withLock {
-            database.withTransaction {
-                val session = dao.getSessionOnce(sessionId) ?: return@withTransaction null
-                val existingRecords = dao.getRecordsForSessionOnce(sessionId)
-                val answeredSet = existingRecords.map { it.questionNumber }.toHashSet()
-
-                var nextQuestion: Int? = null
-                for (q in 1..session.totalQuestions) {
-                    if (!answeredSet.contains(q)) {
-                        nextQuestion = q
-                        break
-                    }
-                }
-                if (nextQuestion == null) return@withTransaction null
-
-                val pos = ScoreMath.parsePositiveMark(session.positiveMark) ?: BigDecimal.ONE
-                val neg = ScoreMath.parseNegativeMark(session.negativeMark) ?: BigDecimal("0.25")
-                val delta = ScoreMath.deltaForAction(action, pos, neg)
-                val recordedAt = nextMonotonicTimestamp(sessionId)
-
-                dao.upsertRecord(
-                    QuestionRecordEntity(
-                        sessionId = sessionId,
-                        questionNumber = nextQuestion,
-                        action = action.name,
-                        markDelta = ScoreMath.formatMark(delta),
-                        recordedAt = recordedAt
-                    )
+    suspend fun persistUpsertRecord(
+        sessionId: Long,
+        record: QuestionRecord,
+        sessionUpdatedAt: Long
+    ) = operationMutex.withLock {
+        database.withTransaction {
+            dao.upsertRecord(
+                QuestionRecordEntity(
+                    sessionId = sessionId,
+                    questionNumber = record.questionNumber,
+                    action = record.action.name,
+                    markDelta = ScoreMath.formatMark(record.markDelta),
+                    recordedAt = record.recordedAt
                 )
-                dao.updateSession(session.copy(updatedAt = System.currentTimeMillis()))
-                pushUndo(sessionId, UndoEntry.Inserted(nextQuestion))
-                nextQuestion
-            }
+            )
+            dao.touchSession(sessionId, sessionUpdatedAt)
         }
+    }
 
     /**
-     * Updates or clears the recorded mark for a specific question number in a session.
-     * Preserves original recordedAt when editing an existing record and records a reversible
-     * undo entry so tapping Undo restores the prior state accurately.
+     * Fast, single-transaction deletion of a single question record + session timestamp touch.
+     */
+    suspend fun persistDeleteRecord(
+        sessionId: Long,
+        questionNumber: Int,
+        sessionUpdatedAt: Long
+    ) = operationMutex.withLock {
+        database.withTransaction {
+            dao.deleteRecord(sessionId, questionNumber)
+            dao.touchSession(sessionId, sessionUpdatedAt)
+        }
+    }
+
+    /**
+     * Updates or clears a question mark on any session (used when editing historical sessions).
      */
     suspend fun setQuestionMark(
         sessionId: Long,
@@ -157,8 +128,7 @@ class MarksheetRepository(
             if (action == null) {
                 if (previous != null) {
                     dao.deleteRecord(sessionId, questionNumber)
-                    dao.updateSession(session.copy(updatedAt = now))
-                    pushUndo(sessionId, UndoEntry.Deleted(previous))
+                    dao.touchSession(sessionId, now)
                 }
                 return@withTransaction
             }
@@ -168,12 +138,12 @@ class MarksheetRepository(
             val delta = ScoreMath.deltaForAction(action, pos, neg)
             val deltaStr = ScoreMath.formatMark(delta)
 
-            // Skip redundant write if nothing actually changed
             if (previous != null && previous.action == action.name && previous.markDelta == deltaStr) {
                 return@withTransaction
             }
 
-            val recordedAt = previous?.recordedAt ?: nextMonotonicTimestamp(sessionId)
+            val maxExisting = dao.getMaxRecordedAt(sessionId) ?: 0L
+            val recordedAt = previous?.recordedAt ?: maxOf(now, maxExisting + 1L)
             dao.upsertRecord(
                 QuestionRecordEntity(
                     sessionId = sessionId,
@@ -183,95 +153,40 @@ class MarksheetRepository(
                     recordedAt = recordedAt
                 )
             )
-            dao.updateSession(session.copy(updatedAt = now))
-            if (previous != null) {
-                pushUndo(sessionId, UndoEntry.Updated(previous))
-            } else {
-                pushUndo(sessionId, UndoEntry.Inserted(questionNumber))
-            }
-        }
-    }
-
-    /**
-     * Reverts the most recent change in the session:
-     * - If an in-memory undo stack entry exists, reverses inserts, edits, and clears accurately.
-     * - After process restart, falls back cleanly to removing the most recently recorded mark.
-     */
-    suspend fun undoLastQuestion(sessionId: Long): UndoResult? = operationMutex.withLock {
-        database.withTransaction {
-            val session = dao.getSessionOnce(sessionId) ?: return@withTransaction null
-            val stack = undoStacks[sessionId]
-
-            while (stack != null && stack.isNotEmpty()) {
-                when (val entry = stack.removeLast()) {
-                    is UndoEntry.Inserted -> {
-                        val existing = dao.getRecordOnce(sessionId, entry.questionNumber)
-                        if (existing != null) {
-                            dao.deleteRecord(sessionId, entry.questionNumber)
-                            dao.updateSession(session.copy(updatedAt = System.currentTimeMillis()))
-                            return@withTransaction UndoResult(
-                                questionNumber = entry.questionNumber,
-                                wasRestore = false
-                            )
-                        }
-                    }
-
-                    is UndoEntry.Updated -> {
-                        dao.upsertRecord(entry.previous)
-                        dao.updateSession(session.copy(updatedAt = System.currentTimeMillis()))
-                        return@withTransaction UndoResult(
-                            questionNumber = entry.previous.questionNumber,
-                            wasRestore = true
-                        )
-                    }
-
-                    is UndoEntry.Deleted -> {
-                        dao.upsertRecord(entry.previous)
-                        dao.updateSession(session.copy(updatedAt = System.currentTimeMillis()))
-                        return@withTransaction UndoResult(
-                            questionNumber = entry.previous.questionNumber,
-                            wasRestore = true
-                        )
-                    }
-                }
-            }
-
-            val mostRecent = dao.getMostRecentRecord(sessionId) ?: return@withTransaction null
-            dao.deleteRecord(sessionId, mostRecent.questionNumber)
-            dao.updateSession(session.copy(updatedAt = System.currentTimeMillis()))
-            UndoResult(
-                questionNumber = mostRecent.questionNumber,
-                wasRestore = false
-            )
+            dao.touchSession(sessionId, now)
         }
     }
 
     /**
      * Atomically clears all recorded marks from the active session and syncs it to latest defaults.
      */
-    suspend fun clearSession(sessionId: Long) = operationMutex.withLock {
+    suspend fun clearSession(sessionId: Long): ExamSession = operationMutex.withLock {
         val config = settingsDataStore.getCurrentConfig()
         database.withTransaction {
-            val session = dao.getSessionOnce(sessionId) ?: return@withTransaction
+            val session = dao.getSessionOnce(sessionId)
             val now = System.currentTimeMillis()
-            dao.deleteAllRecordsForSession(sessionId)
-            dao.updateSession(
-                session.copy(
+            if (session != null) {
+                dao.deleteAllRecordsForSession(sessionId)
+                val updated = session.copy(
                     title = defaultSessionTitle(now),
                     positiveMark = config.positiveMark,
                     negativeMark = config.negativeMark,
                     totalQuestions = config.totalQuestions,
                     updatedAt = now
                 )
-            )
-            clearUndo(sessionId)
+                dao.updateSession(updated)
+                return@withTransaction SessionWithRecords(updated, emptyList()).toDomain()
+            }
+            val newId = createNewActiveSessionLocked()
+            val created = dao.getSessionOnce(newId)!!
+            SessionWithRecords(created, emptyList()).toDomain()
         }
     }
 
     /**
-     * Atomically marks the session as completed with the chosen title and starts a fresh active session.
+     * Atomically marks the session as completed with the chosen title and returns a fresh active session.
      */
-    suspend fun finishAndStartNewSession(sessionId: Long, customTitle: String): Long =
+    suspend fun finishAndStartNewSession(sessionId: Long, customTitle: String): ExamSession =
         operationMutex.withLock {
             database.withTransaction {
                 val session = dao.getSessionOnce(sessionId)
@@ -285,9 +200,10 @@ class MarksheetRepository(
                             updatedAt = now
                         )
                     )
-                    clearUndo(sessionId)
                 }
-                createNewActiveSessionLocked()
+                val newId = createNewActiveSessionLocked()
+                val created = dao.getSessionOnce(newId)!!
+                SessionWithRecords(created, emptyList()).toDomain()
             }
         }
 
@@ -307,15 +223,14 @@ class MarksheetRepository(
     }
 
     /**
-     * Atomically reopens a saved history session in the calculator.
-     * If already active, performs no unnecessary write.
+     * Atomically reopens a saved history session in the calculator and returns its full snapshot.
      */
-    suspend fun openSessionInCalculator(targetSessionId: Long) = operationMutex.withLock {
+    suspend fun openSessionInCalculator(targetSessionId: Long): ExamSession? = operationMutex.withLock {
         database.withTransaction {
-            val target = dao.getSessionOnce(targetSessionId) ?: return@withTransaction
+            val target = dao.getSessionOnce(targetSessionId) ?: return@withTransaction null
             val currentActive = dao.getActiveSessionOnce()
             if (currentActive != null && currentActive.id == targetSessionId && !target.isCompleted) {
-                return@withTransaction
+                return@withTransaction dao.getActiveSessionWithRecordsOnce()?.toDomain()
             }
 
             val now = System.currentTimeMillis()
@@ -326,36 +241,39 @@ class MarksheetRepository(
                 } else {
                     dao.updateSession(currentActive.copy(isCompleted = true, updatedAt = now))
                 }
-                clearUndo(currentActive.id)
             }
             dao.updateSession(target.copy(isCompleted = false, updatedAt = now))
+            dao.getActiveSessionWithRecordsOnce()?.toDomain()
         }
     }
 
-    suspend fun deleteSession(sessionId: Long) = operationMutex.withLock {
+    suspend fun deleteSession(sessionId: Long): ExamSession = operationMutex.withLock {
         database.withTransaction {
-            val target = dao.getSessionOnce(sessionId) ?: return@withTransaction
             dao.deleteSessionById(sessionId)
-            clearUndo(sessionId)
-            if (!target.isCompleted && dao.getActiveSessionOnce() == null) {
-                createNewActiveSessionLocked()
+            val existing = dao.getActiveSessionWithRecordsOnce()
+            if (existing != null) {
+                return@withTransaction existing.toDomain()
             }
+            val newId = createNewActiveSessionLocked()
+            val created = dao.getSessionOnce(newId)!!
+            SessionWithRecords(created, emptyList()).toDomain()
         }
     }
 
     /**
      * Saves new marking scheme defaults to DataStore and atomically updates the active session
-     * if empty or if [applyToCurrentIfNonEmpty] is true. Returns clamping info if totalQuestions
-     * had to be kept higher to preserve already-recorded question numbers.
+     * if empty or if [applyToCurrentIfNonEmpty] is true.
      */
     suspend fun updateMarkingConfig(
         positiveMark: String,
         negativeMark: String,
         totalQuestions: Int,
         applyToCurrentIfNonEmpty: Boolean
-    ): ConfigUpdateResult = operationMutex.withLock {
-        val validPos = ScoreMath.parsePositiveMark(positiveMark) ?: return ConfigUpdateResult()
-        val validNeg = ScoreMath.parseNegativeMark(negativeMark) ?: return ConfigUpdateResult()
+    ): Pair<ConfigUpdateResult, ExamSession?> = operationMutex.withLock {
+        val validPos = ScoreMath.parsePositiveMark(positiveMark)
+            ?: return ConfigUpdateResult() to null
+        val validNeg = ScoreMath.parseNegativeMark(negativeMark)
+            ?: return ConfigUpdateResult() to null
         val validTotal = totalQuestions.coerceIn(1, 1000)
         val posStr = ScoreMath.formatMark(validPos)
         val negStr = ScoreMath.formatMark(validNeg)
@@ -363,10 +281,11 @@ class MarksheetRepository(
         settingsDataStore.updateMarkingScheme(posStr, negStr, validTotal)
 
         database.withTransaction {
-            val active = dao.getActiveSessionOnce() ?: return@withTransaction ConfigUpdateResult()
+            val active = dao.getActiveSessionOnce()
+                ?: return@withTransaction ConfigUpdateResult() to null
             val existingRecords = dao.getRecordsForSessionOnce(active.id)
 
-            if (existingRecords.isEmpty()) {
+            val result = if (existingRecords.isEmpty()) {
                 dao.updateSession(
                     active.copy(
                         positiveMark = posStr,
@@ -394,14 +313,15 @@ class MarksheetRepository(
                         updatedAt = System.currentTimeMillis()
                     )
                 )
-                // Undo snapshots held old mark deltas; clear them so old deltas can't be restored.
-                clearUndo(active.id)
                 ConfigUpdateResult(
                     clampedActiveSessionTo = if (safeTotal > validTotal) safeTotal else null
                 )
             } else {
                 ConfigUpdateResult()
             }
+
+            val updatedSnapshot = dao.getActiveSessionWithRecordsOnce()?.toDomain()
+            result to updatedSnapshot
         }
     }
 
@@ -423,7 +343,7 @@ class MarksheetRepository(
         settingsDataStore.setHapticsEnabled(enabled)
     }
 
-    suspend fun resetDefaults(applyToCurrentIfNonEmpty: Boolean): ConfigUpdateResult {
+    suspend fun resetDefaults(applyToCurrentIfNonEmpty: Boolean): Pair<ConfigUpdateResult, ExamSession?> {
         return updateMarkingConfig(
             positiveMark = AppConfig.DEFAULT_POSITIVE_MARK,
             negativeMark = AppConfig.DEFAULT_NEGATIVE_MARK,
@@ -435,9 +355,5 @@ class MarksheetRepository(
     private fun defaultSessionTitle(timestamp: Long): String {
         val formatter = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
         return "Session • ${formatter.format(Date(timestamp))}"
-    }
-
-    companion object {
-        private const val MAX_UNDO_HISTORY = 200
     }
 }

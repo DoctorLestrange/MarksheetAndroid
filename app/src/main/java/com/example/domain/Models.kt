@@ -1,5 +1,6 @@
 package com.example.domain
 
+import androidx.compose.runtime.Immutable
 import java.math.BigDecimal
 
 enum class MarkAction {
@@ -13,6 +14,7 @@ enum class ThemeMode {
     DARK
 }
 
+@Immutable
 data class AppConfig(
     val positiveMark: String = DEFAULT_POSITIVE_MARK,
     val negativeMark: String = DEFAULT_NEGATIVE_MARK,
@@ -34,6 +36,7 @@ data class AppConfig(
     }
 }
 
+@Immutable
 data class QuestionRecord(
     val questionNumber: Int,
     val action: MarkAction,
@@ -41,6 +44,7 @@ data class QuestionRecord(
     val recordedAt: Long
 )
 
+@Immutable
 data class SessionSummary(
     val totalScore: BigDecimal,
     val maxScore: BigDecimal,
@@ -62,6 +66,7 @@ data class SessionSummary(
         get() = if (totalQuestions <= 0) 0f else (answeredCount.toFloat() / totalQuestions.toFloat()).coerceIn(0f, 1f)
 }
 
+@Immutable
 data class ExamSession(
     val id: Long,
     val title: String,
@@ -83,6 +88,7 @@ data class ExamSession(
     val recordsByQuestion: Map<Int, QuestionRecord> = records.associateBy { it.questionNumber }
 }
 
+@Immutable
 data class ExamPreset(
     val name: String,
     val subtitle: String,

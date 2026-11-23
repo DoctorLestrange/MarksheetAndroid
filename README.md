@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Android%207.0%2B%20(API%2024)-3DDC84?style=flat-square&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Permissions](https://img.shields.io/badge/Permissions-None%20(Offline)-1B7349?style=flat-square)](#privacy--permissions)
+[![Permissions](https://img.shields.io/badge/Offline-No%20Sensitive%20Permissions-1B7349?style=flat-square)](#privacy--permissions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-222220?style=flat-square)](LICENSE)
 
 </div>
@@ -134,8 +134,8 @@ app/src/main/java/com/example/
 ### Clone & Build
 
 ```bash
-git clone https://github.com/<your-username>/marksheet.git
-cd marksheet
+git clone https://github.com/DoctorLestrange/MarksheetAndroid.git
+cd MarksheetAndroid
 
 # Create a local debug keystore if not already present
 if [ ! -f debug.keystore ]; then
@@ -198,8 +198,8 @@ gradle :app:assembleRelease
 
 ## Privacy & Permissions
 
-- **Zero Permissions**: Marksheet requests **no** Android permissions — no internet access, no location, no camera, no storage permissions.
-- **100% Offline Local Storage**: All exam sessions, per-question mark records, and settings stay strictly on your device in Room SQLite and DataStore.
+- **No Sensitive Permissions**: Marksheet works **100% offline** with no internet, storage, camera, location, or contacts permissions. It declares only the standard install-time `VIBRATE` permission to power optional tactile haptic feedback.
+- **Local Storage Only**: All exam sessions, per-question mark records, and settings stay strictly on your device in Room SQLite and DataStore.
 - **Android Auto Backup**: Explicit `backup_rules.xml` and `data_extraction_rules.xml` rules include the database and preferences for seamless Android device upgrades.
 
 ---

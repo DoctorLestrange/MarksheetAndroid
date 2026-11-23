@@ -102,6 +102,19 @@
     <string name="settings_saved_feedback">Configuration saved</string>
     <string name="settings_section_presets">Quick Exam Presets</string>
     <string name="settings_reset_defaults">Reset to Defaults (+1 / -0.25 / 100 Qs)</string>
+    <string name="settings_about_button">About Marksheet</string>
+    <string name="settings_about_subtitle">Program details, developer, GitHub &amp; MIT License</string>
+
+    <!-- About sheet -->
+    <string name="about_title">About Marksheet</string>
+    <string name="about_description">A fast, exact, offline exam score calculator with per-question mark tracking, reversible undo, session history, configurable marking schemes, and eye-friendly light and dark themes.</string>
+    <string name="about_developer_label">Developer</string>
+    <string name="about_developer_name">DoctorLestrange</string>
+    <string name="about_github_label">GitHub Repository</string>
+    <string name="about_github_url">https://github.com/DoctorLestrange/MarksheetAndroid</string>
+    <string name="about_license_title">MIT License</string>
+    <string name="about_open_github_cd">Open Marksheet GitHub repository in browser</string>
+    <string name="about_close">Close</string>
 
     <string name="error_positive_invalid">Enter a positive number greater than 0 (max 4 decimals)</string>
     <string name="error_negative_invalid">Enter 0 or a valid number (max 4 decimals)</string>

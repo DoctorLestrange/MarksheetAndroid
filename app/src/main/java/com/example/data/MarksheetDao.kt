@@ -23,6 +23,10 @@ interface MarksheetDao {
     @Query("SELECT * FROM exam_sessions WHERE id = :sessionId")
     fun observeSessionById(sessionId: Long): Flow<SessionWithRecords?>
 
+    @Transaction
+    @Query("SELECT * FROM exam_sessions WHERE isCompleted = 0 ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getActiveSessionWithRecordsOnce(): SessionWithRecords?
+
     @Query("SELECT * FROM exam_sessions WHERE isCompleted = 0 ORDER BY updatedAt DESC LIMIT 1")
     suspend fun getActiveSessionOnce(): ExamSessionEntity?
 
@@ -52,6 +56,9 @@ interface MarksheetDao {
 
     @Update
     suspend fun updateSession(session: ExamSessionEntity)
+
+    @Query("UPDATE exam_sessions SET updatedAt = :timestamp WHERE id = :sessionId")
+    suspend fun touchSession(sessionId: Long, timestamp: Long)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertRecord(record: QuestionRecordEntity)

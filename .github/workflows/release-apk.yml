@@ -1,4 +1,4 @@
-name: Build & Publish APK Release
+name: Build & Publish Versioned APK Release
 
 on:
   push:
@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag name (e.g. v1.0.0 or latest)'
-        required: true
-        default: 'v1.0.0'
+        description: 'Optional release tag override (leave blank to use versionName from app/build.gradle.kts)'
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -21,12 +21,14 @@ concurrency:
 
 jobs:
   publish-apk:
-    name: Build & Publish Installable APK
+    name: Build & Publish Versioned APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -39,17 +41,29 @@ jobs:
         with:
           gradle-version: 9.3.1
 
-      - name: Determine release tag
+      - name: Resolve semantic version and release tag
         id: meta
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          APP_VERSION=$(grep -E '^[[:space:]]*versionName[[:space:]]*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          APP_CODE=$(grep -E '^[[:space:]]*versionCode[[:space:]]*=' app/build.gradle.kts | head -n1 | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+
+          if [ -z "$APP_VERSION" ]; then
+            echo "Failed to parse versionName from app/build.gradle.kts" >&2
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.release_tag }}" ]; then
             TAG="${{ inputs.release_tag }}"
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="latest"
+            TAG="v${APP_VERSION}"
           fi
+
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "code=${APP_CODE}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag: ${TAG} (versionName=${APP_VERSION}, versionCode=${APP_CODE})"
 
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --tests "com.example.ScoreMathTest"
@@ -108,45 +122,58 @@ jobs:
             echo "build_type=Debug (Direct Install APK)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish APK to GitHub Releases
+      - name: Sync Git tag & publish versioned GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
+          APP_VERSION="${{ steps.meta.outputs.version }}"
+          APP_CODE="${{ steps.meta.outputs.code }}"
           APK_PATH="${{ steps.build.outputs.apk_path }}"
           AAB_PATH="${{ steps.build.outputs.aab_path }}"
           BUILD_TYPE="${{ steps.build.outputs.build_type }}"
           SHORT_SHA="${GITHUB_SHA:0:7}"
 
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Remove legacy 'latest' rolling release & tag if migrating to semantic versions
+          if [ "$TAG" != "latest" ] && gh release view "latest" >/dev/null 2>&1; then
+            echo "Removing legacy 'latest' release and tag..."
+            gh release delete "latest" --cleanup-tag --yes || true
+          fi
+
+          # If a release for this exact version already exists, recreate it after moving the Git tag
+          # so GitHub regenerates Source code (zip) & Source code (tar.gz) for the newest commit.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Refreshing existing release ${TAG} to commit ${SHORT_SHA}..."
+            gh release delete "$TAG" --yes
+          fi
+
+          # Point the Git tag directly at the current commit so source archives always match the APK
+          git tag -f "$TAG" "${GITHUB_SHA}"
+          git push -f origin "refs/tags/${TAG}"
+
           NOTES="$(printf '%s\n' \
-            "## Marksheet (${TAG})" \
+            "## Marksheet ${TAG}" \
             "" \
             "**Direct Android Installation:**" \
-            "1. Download the \`.apk\` file below onto your Android device (Android 7.0+ / API 24+)." \
+            "1. Download \`Marksheet-${TAG}.apk\` below onto your Android device (Android 7.0+ / API 24+)." \
             "2. Open the downloaded file and allow installation from your browser or file manager if prompted." \
             "" \
+            "- **Version:** \`${APP_VERSION}\` (build \`${APP_CODE}\`)" \
             "- **Build Type:** ${BUILD_TYPE}" \
             "- **Commit:** \`${SHORT_SHA}\`" \
             "- **Permissions:** Offline-only (install-time \`VIBRATE\` for optional haptics)")"
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Updating existing release ${TAG}..."
-            gh release edit "$TAG" --title "Marksheet ${TAG}" --notes "$NOTES"
-            gh release upload "$TAG" "$APK_PATH" --clobber
-            if [ -n "$AAB_PATH" ] && [ -f "$AAB_PATH" ]; then
-              gh release upload "$TAG" "$AAB_PATH" --clobber
-            fi
+          if [ -n "$AAB_PATH" ] && [ -f "$AAB_PATH" ]; then
+            gh release create "$TAG" "$APK_PATH" "$AAB_PATH" \
+              --title "Marksheet ${TAG}" \
+              --notes "$NOTES" \
+              --latest
           else
-            echo "Creating new release ${TAG}..."
-            if [ -n "$AAB_PATH" ] && [ -f "$AAB_PATH" ]; then
-              gh release create "$TAG" "$APK_PATH" "$AAB_PATH" \
-                --target "${GITHUB_SHA}" \
-                --title "Marksheet ${TAG}" \
-                --notes "$NOTES"
-            else
-              gh release create "$TAG" "$APK_PATH" \
-                --target "${GITHUB_SHA}" \
-                --title "Marksheet ${TAG}" \
-                --notes "$NOTES"
-            fi
+            gh release create "$TAG" "$APK_PATH" \
+              --title "Marksheet ${TAG}" \
+              --notes "$NOTES" \
+              --latest
           fi

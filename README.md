@@ -168,9 +168,12 @@ gradle :app:testDebugUnitTest --tests "com.example.ScoreMathTest"
 gradle :app:lintDebug
 ```
 
-### Automated GitHub Releases & Production Signing
+### Automated GitHub Releases, Versioning & Production Signing
 
-Every push to `main`/`master` automatically publishes an installable APK to the `latest` GitHub Release, and pushing a version tag (e.g., `git tag v1.0.0 && git push origin v1.0.0`) publishes a versioned release.
+App versioning uses **`versionName`** and **`versionCode`** in `app/build.gradle.kts` as the single source of truth (currently `v1.0.0`, build `1`):
+
+- Pushing to `main`/`master` automatically builds and publishes **`Marksheet v<versionName>`** to GitHub Releases with `Marksheet-v<versionName>.apk` and freshly synced `Source code (zip)` / `Source code (tar.gz)` archives matching the exact commit.
+- To publish a new version (e.g. `v1.0.1` or `v1.1.0`), increment `versionCode` and update `versionName` in `app/build.gradle.kts` (plus `CHANGELOG.md`) and push to `main` (or push a matching `v*` tag).
 
 By default, automated releases build a directly installable APK with zero setup required. To automatically publish **production-signed Release APKs & Google Play AABs**, add these three secrets under **Settings → Secrets and variables → Actions**:
 

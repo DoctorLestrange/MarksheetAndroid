@@ -59,8 +59,9 @@ jobs:
 
       - name: Prepare APK artifact
         run: |
+          APP_VERSION=$(grep -E '^[[:space:]]*versionName[[:space:]]*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Marksheet-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/Marksheet-v${APP_VERSION}-debug.apk"
 
       - name: Upload Lint Report
         if: always()
@@ -74,4 +75,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Marksheet-debug-apk
-          path: dist/Marksheet-debug.apk
+          path: dist/Marksheet-*.apk
